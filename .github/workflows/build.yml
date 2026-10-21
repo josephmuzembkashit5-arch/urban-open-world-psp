@@ -1,19 +1,37 @@
-name: Build PSP Homebrew
+name: Build PSP Game
+
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
+
 jobs:
   build:
+    name: Compile PSP Game
     runs-on: ubuntu-latest
+
+    container:
+      image: pspdev/pspdev:latest
+
     steps:
-      - name: Checkout source
+      - name: Download source code
         uses: actions/checkout@v4
-      - name: Build with PSPSDK
+
+      - name: Configure PSP SDK
+        shell: bash
         run: |
-          docker pull pspdev/pspdev:latest
-          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src pspdev/pspdev:latest make
-      - name: Upload EBOOT.PBP
+          export PSPSDK="$(psp-config --pspsdk-path)"
+          echo "PSPSDK=$PSPSDK" >> "$GITHUB_ENV"
+          echo "PSP SDK path: $PSPSDK"
+
+      - name: Compile game
+        shell: bash
+        run: |
+          make clean || true
+          make
+
+      - name: Upload PSP game
         uses: actions/upload-artifact@v4
         with:
           name: UrbanOpenWorld-PSP
