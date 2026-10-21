@@ -1,3 +1,4 @@
+
 TARGET = urban_open_world
 OBJS = main.o
 
@@ -13,6 +14,5 @@ PSP_FW_VERSION = 660
 
 EXTRA_TARGETS = EBOOT.PBP
 PSP_EBOOT_TITLE = Urban Open World - Prototype
-PSP_EBOOT_ICON =
 
 include $(PSPSDK)/lib/build.mak
