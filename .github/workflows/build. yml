@@ -1,0 +1,21 @@
+name: Build PSP Homebrew
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Build with PSPSDK
+        run: |
+          docker pull pspdev/pspdev:latest
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src pspdev/pspdev:latest sh -lc 'export PSPSDK="$(psp-config --pspsdk-path)"; make'
+      - name: Upload EBOOT.PBP
+        uses: actions/upload-artifact@v4
+        with:
+          name: UrbanOpenWorld-PSP
+          path: EBOOT.PBP
+          if-no-files-found: error
