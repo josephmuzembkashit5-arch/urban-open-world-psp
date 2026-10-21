@@ -1,39 +1,242 @@
-name: Build PSP Game
 
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+/*
+ * Urban Open World PSP
+ * Prototype graphique corrigé
+ * Compatible avec le SDK PSP et PPSSPP
+ */
 
-jobs:
-  build:
-    name: Compile PSP Game
-    runs-on: ubuntu-latest
+#include <pspkernel.h>
+#include <pspdisplay.h>
+#include <pspctrl.h>
+#include <pspgu.h>
+#include <pspgum.h>
+#include <pspdebug.h>
+#include <stdio.h>
 
-    container:
-      image: pspdev/pspdev:latest
+PSP_MODULE_INFO("UrbanOpenWorld", 0, 0, 1);
+PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 
-    steps:
-      - name: Download source code
-        uses: actions/checkout@v4
+#define W 480
+#define H 272
+#define BUF_W 512
 
-      - name: Configure PSP SDK
-        shell: bash
-        run: |
-          export PSPSDK="$(psp-config --pspsdk-path)"
-          echo "PSPSDK=$PSPSDK" >> "$GITHUB_ENV"
-          echo "PSP SDK path: $PSPSDK"
+static unsigned int __attribute__((aligned(16))) display_list[262144];
 
-      - name: Compile game
-        shell: bash
-        run: |
-          make clean || true
-          make
+typedef struct {
+    unsigned int color;
+    float x, y, z;
+} Vertex;
 
-      - name: Upload PSP game
-        uses: actions/upload-artifact@v4
-        with:
-          name: UrbanOpenWorld-PSP
-          path: EBOOT.PBP
-          if-no-files-found: error
+static int camera_mode = 0;
+static int mission = 0;
+static float player_x = 240.0f;
+static float player_y = 205.0f;
+
+static void rect(float x, float y, float w, float h,
+                 unsigned int color)
+{
+    Vertex v[2] = {
+        {color, x,     y,     0.0f},
+        {color, x + w, y + h, 0.0f}
+    };
+
+    sceGuDrawArray(
+        GU_SPRITES,
+        GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D,
+        2, 0, v
+    );
+}
+
+static void quad(float x1, float y1,
+                 float x2, float y2,
+                 float x3, float y3,
+                 float x4, float y4,
+                 unsigned int color)
+{
+    Vertex v[4] = {
+        {color, x1, y1, 0.0f},
+        {color, x2, y2, 0.0f},
+        {color, x3, y3, 0.0f},
+        {color, x4, y4, 0.0f}
+    };
+
+    sceGuDrawArray(
+        GU_TRIANGLE_STRIP,
+        GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D,
+        4, 0, v
+    );
+}
+
+static void draw_scene(void)
+{
+    sceGuStart(GU_DIRECT, display_list);
+
+    sceGuClearColor(0xffa5b8c9);
+    sceGuClear(GU_COLOR_BUFFER_BIT);
+
+    sceGuDisable(GU_DEPTH_TEST);
+    sceGuDisable(GU_TEXTURE_2D);
+    sceGuDisable(GU_CULL_FACE);
+    sceGuShadeModel(GU_FLAT);
+
+    /* Ciel et horizon */
+    rect(0, 0, W, 125, 0xffc9b9a5);
+    rect(0, 100, W, 30, 0xff8b9698);
+
+    /* Bâtiments à gauche */
+    quad(0, 38, 145, 63, 158, 177, 0, 185,
+         0xff454a50);
+    quad(8, 57, 112, 77, 125, 158, 8, 170,
+         0xff62686c);
+
+    /* Bâtiments à droite */
+    quad(480, 40, 345, 65, 326, 177, 480, 185,
+         0xff41464b);
+    quad(472, 59, 375, 78, 357, 158, 472, 170,
+         0xff62686c);
+
+    /* Fenêtres */
+    for (int r = 0; r < 5; r++) {
+        for (int c = 0; c < 5; c++) {
+            rect(18 + c * 19, 75 + r * 15,
+                 9, 8, 0xffb9cbd0);
+
+            rect(382 + c * 15, 77 + r * 14,
+                 8, 8, 0xffb9cbd0);
+        }
+    }
+
+    /* Trottoirs et chaussée */
+    quad(0, 174, 480, 174, 480, 272, 0, 272,
+         0xff34383b);
+
+    quad(0, 165, 145, 160, 128, 190, 0, 204,
+         0xffaaa79d);
+
+    quad(480, 165, 335, 160, 352, 190, 480, 204,
+         0xffaaa79d);
+
+    /* Marquage routier */
+    rect(236, 183, 8, 18, 0xffe9dfc4);
+    rect(232, 218, 16, 22, 0xffe9dfc4);
+    rect(226, 255, 28, 17, 0xffe9dfc4);
+
+    /* Caméra : trois cadrages de démonstration */
+    if (camera_mode == 0) {
+        rect(player_x - 16, player_y - 42,
+             32, 43, 0xff263441);
+        rect(player_x - 11, player_y - 58,
+             22, 20, 0xffb9825f);
+        rect(player_x - 14, player_y - 2,
+             10, 20, 0xff20262b);
+        rect(player_x + 4, player_y - 2,
+             10, 20, 0xff20262b);
+    } else if (camera_mode == 1) {
+        rect(player_x - 9, player_y - 25,
+             18, 27, 0xff263441);
+        rect(player_x - 7, player_y - 37,
+             14, 14, 0xffb9825f);
+    } else {
+        rect(player_x - 10, player_y - 24,
+             20, 25, 0xff263441);
+        rect(player_x - 7, player_y - 35,
+             14, 13, 0xffb9825f);
+
+        /* Véhicule provisoire */
+        rect(player_x - 36, player_y + 3,
+             72, 15, 0xff20262b);
+        rect(player_x - 26, player_y,
+             52, 8, 0xff627b88);
+        rect(player_x - 28, player_y + 15,
+             15, 7, 0xff111111);
+        rect(player_x + 13, player_y + 15,
+             15, 7, 0xff111111);
+    }
+
+    /* Mini-carte */
+    rect(10, 190, 110, 72, 0xff151b20);
+    rect(16, 196, 98, 60, 0xff52645a);
+    rect(61, 196, 8, 60, 0xffb5b3a8);
+    rect(16, 222, 98, 6, 0xffb5b3a8);
+    rect(54, 219, 10, 10, 0xff42e7dc);
+
+    /* Indicateurs de vie et d'énergie */
+    rect(132, 14, 84, 9, 0xff151515);
+    rect(134, 16, 68, 5, 0xff39c96a);
+    rect(132, 26, 84, 7, 0xff151515);
+    rect(134, 27, 55, 4, 0xffe4c64d);
+
+    /* Compteur de mission */
+    rect(355, 15, 108, 28, 0xff20262b);
+    rect(365, 24, 14, 10, 0xffe9dfc4);
+    rect(387, 24, 58, 4, 0xffe9dfc4);
+
+    sceGuFinish();
+    sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
+    sceDisplayWaitVblankStart();
+    sceGuSwapBuffers();
+}
+
+int main(void)
+{
+    SceCtrlData pad;
+
+    sceCtrlSetSamplingCycle(0);
+    sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
+
+    sceGuInit();
+
+    sceGuStart(GU_DIRECT, display_list);
+
+    sceGuDrawBuffer(GU_PSM_8888, (void *)0, BUF_W);
+    sceGuDispBuffer(W, H, (void *)0x88000, BUF_W);
+    sceGuDepthBuffer((void *)0x110000, BUF_W);
+
+    sceGuOffset(2048 - W / 2, 2048 - H / 2);
+    sceGuViewport(2048, 2048, W, H);
+    sceGuScissor(0, 0, W, H);
+    sceGuEnable(GU_SCISSOR_TEST);
+
+    sceGuFinish();
+    sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
+
+    sceDisplayWaitVblankStart();
+    sceGuDisplay(GU_TRUE);
+
+    while (1) {
+        sceCtrlReadBufferPositive(&pad, 1);
+
+        if (pad.Buttons & PSP_CTRL_LEFT)
+            player_x -= 2.0f;
+
+        if (pad.Buttons & PSP_CTRL_RIGHT)
+            player_x += 2.0f;
+
+        if (pad.Buttons & PSP_CTRL_UP)
+            player_y -= 2.0f;
+
+        if (pad.Buttons & PSP_CTRL_DOWN)
+            player_y += 2.0f;
+
+        if (player_x < 20) player_x = 20;
+        if (player_x > 460) player_x = 460;
+        if (player_y < 80) player_y = 80;
+        if (player_y > 245) player_y = 245;
+
+        if (pad.Buttons & PSP_CTRL_TRIANGLE) {
+            camera_mode = (camera_mode + 1) % 3;
+            sceKernelDelayThread(180000);
+        }
+
+        if (pad.Buttons & PSP_CTRL_CIRCLE) {
+            mission = (mission + 1) % 4;
+            sceKernelDelayThread(180000);
+        }
+
+        draw_scene();
+    }
+
+    sceGuTerm();
+    sceKernelExitGame();
+    return 0;
+}
